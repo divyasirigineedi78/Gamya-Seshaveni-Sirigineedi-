@@ -1,124 +1,95 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Task Management App</title>
-<style>
-body{
-    font-family: Arial, sans-serif;
-    background:#f4f4f4;
-    margin:0;
-    padding:20px;
-}
-.container{
-    max-width:600px;
-    margin:auto;
-    background:white;
-    padding:20px;
-    border-radius:10px;
-    box-shadow:0 0 10px rgba(0,0,0,0.1);
-}
-h1{
-    text-align:center;
-}
-input{
-    width:70%;
-    padding:10px;
-}
-button{
-    padding:10px 15px;
-    background:#007bff;
-    color:white;
-    border:none;
-    border-radius:5px;
-    cursor:pointer;
-}
-ul{
-    list-style:none;
-    padding:0;
-}
-li{
-    display:flex;
-    justify-content:space-between;
-    align-items:center;
-    padding:10px;
-    margin-top:10px;
-    background:#eee;
-    border-radius:5px;
-}
-.completed{
-    text-decoration:line-through;
-    color:gray;
-}
-</style>
-</head>
-<body>
+from flask import Flask, render_template, request, redirect, session
+import sqlite3
 
-<div class="container">
-    <h1>Task Management App</h1>
+app = Flask(__name__)
+app.secret_key = "ecommerce"
 
-    <input type="text" id="taskInput" placeholder="Enter Task">
-    <button onclick="addTask()">Add</button>
+def connect():
+    conn = sqlite3.connect("database.db")
+    conn.row_factory = sqlite3.Row
+    return conn
 
-    <ul id="taskList"></ul>
-</div>
+@app.route("/")
+def home():
+    conn = connect()
+    products = conn.execute("SELECT * FROM products").fetchall()
+    conn.close()
+    return render_template("index.html", products=products)
 
-<script>
-let tasks = JSON.parse(localStorage.getItem("tasks")) || [];
+@app.route("/register", methods=["GET","POST"])
+def register():
+    if request.method == "POST":
+        username = request.form["username"]
+        password = request.form["password"]
 
-function saveTasks(){
-    localStorage.setItem("tasks", JSON.stringify(tasks));
-}
+        conn = connect()
+        conn.execute(
+            "INSERT INTO users(username,password) VALUES(?,?)",
+            (username,password)
+        )
+        conn.commit()
+        conn.close()
 
-function displayTasks(){
-    let taskList = document.getElementById("taskList");
-    taskList.innerHTML = "";
+        return redirect("/login")
 
-    tasks.forEach((task,index)=>{
-        let li = document.createElement("li");
+    return render_template("register.html")
 
-        li.innerHTML = `
-            <span class="${task.completed ? 'completed' : ''}"
-             onclick="toggleTask(${index})">
-             ${task.name}
-            </span>
-            <button onclick="deleteTask(${index})">Delete</button>
-        `;
+@app.route("/login", methods=["GET","POST"])
+def login():
+    if request.method == "POST":
+        username = request.form["username"]
+        password = request.form["password"]
 
-        taskList.appendChild(li);
-    });
-}
+        conn = connect()
+        user = conn.execute(
+            "SELECT * FROM users WHERE username=? AND password=?",
+            (username,password)
+        ).fetchone()
+        conn.close()
 
-function addTask(){
-    let input = document.getElementById("taskInput");
+        if user:
+            session["user"] = username
+            return redirect("/")
 
-    if(input.value.trim() === "") return;
+    return render_template("login.html")
 
-    tasks.push({
-        name: input.value,
-        completed:false
-    });
+@app.route("/add/<int:id>")
+def add(id):
+    if "cart" not in session:
+        session["cart"] = []
 
-    input.value="";
-    saveTasks();
-    displayTasks();
-}
+    cart = session["cart"]
+    cart.append(id)
+    session["cart"] = cart
 
-function toggleTask(index){
-    tasks[index].completed = !tasks[index].completed;
-    saveTasks();
-    displayTasks();
-}
+    return redirect("/")
 
-function deleteTask(index){
-    tasks.splice(index,1);
-    saveTasks();
-    displayTasks();
-}
+@app.route("/cart")
+def cart():
+    if "cart" not in session:
+        session["cart"] = []
 
-displayTasks();
-</script>
+    conn = connect()
 
-</body>
-</html>
+    products = []
+
+    for pid in session["cart"]:
+        p = conn.execute(
+            "SELECT * FROM products WHERE id=?",
+            (pid,)
+        ).fetchone()
+
+        if p:
+            products.append(p)
+
+    conn.close()
+
+    return render_template("cart.html", products=products)
+
+@app.route("/checkout")
+def checkout():
+    session["cart"] = []
+    return "Order Placed Successfully!"
+
+if __name__ == "__main__":
+    app.run(debug=True)
